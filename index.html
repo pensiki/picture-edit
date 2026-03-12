@@ -60,6 +60,19 @@
             pointer-events: none;
             display: none;
         }
+        #wm-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: auto;
+            z-index: 5;
+        }
+        .wm-item {
+            position: absolute;
+            pointer-events: none;
+            white-space: nowrap;
+            user-select: none;
+            -webkit-font-smoothing: antialiased;
+        }
     </style>
 </head>
 <body class="p-2 sm:p-4">
@@ -89,6 +102,7 @@
             <!-- 画布 -->
             <div class="canvas-container mb-4" id="container">
                 <canvas id="mainCanvas"></canvas>
+                <div id="wm-layer"></div>
                 <div id="selection-box"></div>
             </div>
 
@@ -195,11 +209,21 @@
                         <input type="range" id="wmDensity" min="15" max="60" value="30" class="w-full">
                     </div>
                     <div class="space-y-1">
-                        <label class="text-gray-500">旋转角度</label>
+                        <label class="text-gray-500">倾斜角度: <span id="wmRotateVal">-30</span></label>
                         <input type="range" id="wmRotate" min="-90" max="90" value="-30" class="w-full">
                     </div>
                 </div>
-                <button onclick="addFullScreenWatermark()" class="w-full bg-gray-800 text-white py-2 rounded-lg text-sm font-bold shadow-lg">生成全屏水印</button>
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div class="space-y-1">
+                        <label class="text-gray-500">字体大小</label>
+                        <input type="range" id="wmSize" min="10" max="60" value="14" class="w-full">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-gray-500">拖动提示</label>
+                        <p class="text-[10px] text-gray-400">在画布上拖动水印层移动位置</p>
+                    </div>
+                </div>
+                <button onclick="addFullScreenWatermark()" class="w-full bg-gray-800 text-white py-2 rounded-lg text-sm font-bold shadow-lg">生成/更新水印</button>
                 <button onclick="clearAllOverlays()" class="w-full border border-gray-300 py-2 rounded-lg text-xs text-gray-500">清除所有文字/水印</button>
             </div>
 
@@ -240,6 +264,7 @@
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         const container = document.getElementById('container');
         const selBox = document.getElementById('selection-box');
+        const wmLayer = document.getElementById('wm-layer');
         
         let originalImg = null;
         let mosaicMode = 'pixel';
@@ -250,8 +275,29 @@
         let activeDiv = null;
         let isRestoring = false;
         let historyTimer = null;
+        let wmState = {
+            text: '版权所有',
+            color: '#888888',
+            opacity: 0.3,
+            density: 30,
+            rotate: -30,
+            size: 14,
+            offsetX: 0,
+            offsetY: 0,
+            enabled: false
+        };
+        let wmDragging = false;
+        let wmDragStart = {x: 0, y: 0};
+        let wmOffsetStart = {x: 0, y: 0};
 
         document.getElementById('imageInput').addEventListener('change', handleUpload);
+        ['wmText','wmColor','wmOpacity','wmDensity','wmRotate','wmSize'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => {
+                updateWatermarkState();
+                document.getElementById('wmRotateVal').innerText = document.getElementById('wmRotate').value;
+                renderWatermarkPreview();
+            });
+        });
 
         function handleUpload(e) {
             const file = e.target.files[0];
@@ -429,35 +475,92 @@
 
         // 水印功能
         function addFullScreenWatermark() {
-            const txt = document.getElementById('wmText').value || 'Watermark';
-            const color = document.getElementById('wmColor').value;
-            const opacity = document.getElementById('wmOpacity').value / 100;
-            const density = parseInt(document.getElementById('wmDensity').value);
-            const rotate = document.getElementById('wmRotate').value;
-
-            for(let y = 0; y < 100; y += density) {
-                for(let x = 0; x < 100; x += (density * 1.5)) {
-                    const div = document.createElement('div');
-                    div.className = 'text-overlay';
-                    div.innerText = txt;
-                    div.style.left = x + '%';
-                    div.style.top = y + '%';
-                    div.style.color = color;
-                    div.style.opacity = opacity;
-                    div.style.transform = `rotate(${rotate}deg)`;
-                    div.style.fontSize = '14px';
-                    div.style.pointerEvents = 'none';
-                    container.appendChild(div);
-                }
-            }
+            updateWatermarkState();
+            wmState.enabled = true;
+            renderWatermarkPreview();
             saveHistory();
         }
 
         function clearAllOverlays() {
             document.querySelectorAll('.text-overlay').forEach(el => el.remove());
             activeDiv = null;
+            wmLayer.innerHTML = '';
+            wmState.enabled = false;
+            wmState.offsetX = 0;
+            wmState.offsetY = 0;
             saveHistory();
         }
+
+        function updateWatermarkState() {
+            wmState.text = document.getElementById('wmText').value || 'Watermark';
+            wmState.color = document.getElementById('wmColor').value;
+            wmState.opacity = parseInt(document.getElementById('wmOpacity').value, 10) / 100;
+            wmState.density = parseInt(document.getElementById('wmDensity').value, 10);
+            wmState.rotate = parseFloat(document.getElementById('wmRotate').value);
+            wmState.size = parseInt(document.getElementById('wmSize').value, 10);
+        }
+
+        function renderWatermarkPreview() {
+            wmLayer.innerHTML = '';
+            if (!wmState.enabled) return;
+            const density = wmState.density;
+            const rotate = wmState.rotate;
+            const size = wmState.size;
+            const offsetX = wmState.offsetX;
+            const offsetY = wmState.offsetY;
+
+            for (let y = 0; y < 100; y += density) {
+                for (let x = 0; x < 100; x += (density * 1.5)) {
+                    const div = document.createElement('div');
+                    div.className = 'wm-item';
+                    div.innerText = wmState.text;
+                    div.style.left = `calc(${x}% + ${offsetX}px)`;
+                    div.style.top = `calc(${y}% + ${offsetY}px)`;
+                    div.style.color = wmState.color;
+                    div.style.opacity = wmState.opacity;
+                    div.style.transform = `rotate(${rotate}deg)`;
+                    div.style.fontSize = `${size}px`;
+                    wmLayer.appendChild(div);
+                }
+            }
+        }
+
+        wmLayer.addEventListener('mousedown', (e) => {
+            if (!wmState.enabled) return;
+            wmDragging = true;
+            wmDragStart = {x: e.clientX, y: e.clientY};
+            wmOffsetStart = {x: wmState.offsetX, y: wmState.offsetY};
+        });
+        wmLayer.addEventListener('touchstart', (e) => {
+            if (!wmState.enabled) return;
+            const t = e.touches[0];
+            wmDragging = true;
+            wmDragStart = {x: t.clientX, y: t.clientY};
+            wmOffsetStart = {x: wmState.offsetX, y: wmState.offsetY};
+        });
+        window.addEventListener('mousemove', (e) => {
+            if (!wmDragging) return;
+            wmState.offsetX = wmOffsetStart.x + (e.clientX - wmDragStart.x);
+            wmState.offsetY = wmOffsetStart.y + (e.clientY - wmDragStart.y);
+            renderWatermarkPreview();
+        });
+        window.addEventListener('touchmove', (e) => {
+            if (!wmDragging) return;
+            const t = e.touches[0];
+            wmState.offsetX = wmOffsetStart.x + (t.clientX - wmDragStart.x);
+            wmState.offsetY = wmOffsetStart.y + (t.clientY - wmDragStart.y);
+            renderWatermarkPreview();
+        }, {passive: false});
+        window.addEventListener('mouseup', () => {
+            if (!wmDragging) return;
+            wmDragging = false;
+            saveHistory();
+        });
+        window.addEventListener('touchend', () => {
+            if (!wmDragging) return;
+            wmDragging = false;
+            saveHistory();
+        });
 
         // --- 核心模糊算法修复 ---
         function setMosaicMode(m) {
@@ -710,7 +813,8 @@
             if (isRestoring) return;
             const state = {
                 canvas: canvas.toDataURL(),
-                overlays: Array.from(document.querySelectorAll('.text-overlay')).map(captureOverlayState)
+                overlays: Array.from(document.querySelectorAll('.text-overlay')).map(captureOverlayState),
+                watermark: {...wmState}
             };
             if (history.length > 30) history.shift();
             history.push(state);
@@ -726,6 +830,8 @@
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     ctx.drawImage(img, 0, 0);
                     restoreOverlays(last.overlays || []);
+                    wmState = last.watermark ? {...last.watermark} : {...wmState, enabled: false, offsetX: 0, offsetY: 0};
+                    renderWatermarkPreview();
                     isRestoring = false;
                 };
                 img.src = last.canvas;
@@ -761,6 +867,31 @@
 
             const rect = canvas.getBoundingClientRect();
             const scale = canvas.width / rect.width;
+            if (wmState.enabled) {
+                const density = wmState.density;
+                const rotate = wmState.rotate * Math.PI / 180;
+                const size = wmState.size * scale;
+                const offsetX = wmState.offsetX * scale;
+                const offsetY = wmState.offsetY * scale;
+
+                fctx.save();
+                fctx.fillStyle = wmState.color;
+                fctx.globalAlpha = wmState.opacity;
+                fctx.font = `normal normal ${size}px sans-serif`;
+                fctx.textBaseline = 'top';
+                for (let y = 0; y < 100; y += density) {
+                    for (let x = 0; x < 100; x += (density * 1.5)) {
+                        const px = (x / 100) * canvas.width + offsetX;
+                        const py = (y / 100) * canvas.height + offsetY;
+                        fctx.save();
+                        fctx.translate(px, py);
+                        fctx.rotate(rotate);
+                        fctx.fillText(wmState.text, 0, 0);
+                        fctx.restore();
+                    }
+                }
+                fctx.restore();
+            }
 
             document.querySelectorAll('.text-overlay').forEach(div => {
                 fctx.save();

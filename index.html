@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>图片全能王 Pro - 强力模糊版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&family=ZCOOL+XiaoWei&family=Noto+Sans+SC:wght@400;700&family=Noto+Serif+SC:wght@400;700&family=Noto+Sans+JP:wght@400;700&family=Noto+Serif+JP:wght@400;700&family=Noto+Sans+KR:wght@400;700&family=Noto+Serif+KR:wght@400;700&display=swap');
+        body {
+            touch-action: manipulation;
+            background-color: #f0f2f5;
+            -webkit-tap-highlight-color: transparent;
+            font-family: -apple-system, sans-serif;
+        }
+        .canvas-container {
+            position: relative;
+            max-width: 100%;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #ddd;
+            border-radius: 12px;
+            min-height: 250px;
+        }
+        canvas {
+            max-width: 100%;
+            height: auto !important;
+            touch-action: none;
+        }
+        .text-overlay {
+            position: absolute;
+            cursor: move;
+            border: 2px dashed transparent;
+            user-select: none;
+            white-space: pre-wrap;
+            padding: 2px;
+            box-sizing: border-box;
+            display: inline-block;
+            line-height: 1.2;
+            letter-spacing: 0px;
+            -webkit-font-smoothing: antialiased;
+            paint-order: stroke fill;
+        }
+        .text-overlay.active {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.15);
+            z-index: 100;
+        }
+        .tab-active {
+            border-bottom: 3px solid #4f46e5;
+            color: #4f46e5;
+            font-weight: bold;
+        }
+        #selection-box {
+            position: absolute;
+            border: 1px dashed #4f46e5;
+            background: rgba(79, 70, 229, 0.2);
+            pointer-events: none;
+            display: none;
+        }
+    </style>
+</head>
+<body class="p-2 sm:p-4">
+    <div class="max-w-md mx-auto bg-white rounded-3xl shadow-2xl overflow-hidden">
+        <header class="bg-indigo-600 p-4 text-white flex justify-between items-center">
+            <h1 class="font-bold text-lg">图片全能王 Pro</h1>
+            <button onclick="undo()" class="bg-indigo-500 hover:bg-indigo-400 px-3 py-1 rounded-full text-xs transition">撤销</button>
+        </header>
+
+        <!-- 导航栏 -->
+        <div class="flex border-b text-xs sm:text-sm bg-gray-50">
+            <button onclick="switchTab('text')" id="tab-text" class="flex-1 py-3 tab-active">文字编辑</button>
+            <button onclick="switchTab('watermark')" id="tab-watermark" class="flex-1 py-3 text-gray-500">全屏水印</button>
+            <button onclick="switchTab('mosaic')" id="tab-mosaic" class="flex-1 py-3 text-gray-500">强力模糊</button>
+            <button onclick="switchTab('export')" id="tab-export" class="flex-1 py-3 text-gray-500">保存</button>
+        </div>
+
+        <div class="p-4">
+            <!-- 上传 -->
+            <div id="upload-area" class="mb-4">
+                <label class="flex flex-col items-center justify-center w-full h-20 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer bg-gray-50 hover:bg-blue-50 transition">
+                    <span class="text-xs text-gray-400">点击上传或更换背景图</span>
+                    <input id="imageInput" type="file" class="hidden" accept="image/*" />
+                </label>
+            </div>
+
+            <!-- 画布 -->
+            <div class="canvas-container mb-4" id="container">
+                <canvas id="mainCanvas"></canvas>
+                <div id="selection-box"></div>
+            </div>
+
+            <!-- 模块1：文字编辑 -->
+            <div id="panel-text" class="space-y-3">
+                <div class="flex gap-2">
+                    <textarea id="textInput" placeholder="请输入文字..." class="flex-1 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none resize-none h-12"></textarea>
+                    <button onclick="addText()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md active:scale-95 transition">添加</button>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div class="space-y-1">
+                        <label class="text-gray-500">字体风格</label>
+                        <select id="fontFamily" class="w-full border rounded p-2" onchange="syncSelectedTextStyle()">
+                            <option value="sans-serif">默认无衬线</option>
+                            <option value="'Noto Sans SC', sans-serif">中文无衬线 Noto Sans SC</option>
+                            <option value="'Noto Serif SC', serif">中文衬线 Noto Serif SC</option>
+                            <option value="'ZCOOL XiaoWei', serif">中文古典 站酷小薇</option>
+                            <option value="'ZCOOL KuaiLe', cursive">中文手写 站酷快乐体</option>
+                            <option value="'Ma Shan Zheng', cursive">中文书法 马善政</option>
+                            <option value="'Noto Sans JP', sans-serif">日文无衬线 Noto Sans JP</option>
+                            <option value="'Noto Serif JP', serif">日文衬线 Noto Serif JP</option>
+                            <option value="'Noto Sans KR', sans-serif">韩文无衬线 Noto Sans KR</option>
+                            <option value="'Noto Serif KR', serif">韩文衬线 Noto Serif KR</option>
+                            <option value="serif">通用衬线</option>
+                            <option value="monospace">等宽字体</option>
+                            <option value="cursive">手写圆润</option>
+                        </select>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-gray-500">文字颜色</label>
+                        <input type="color" id="textColor" class="w-full h-9 rounded p-1 border" value="#ffffff" oninput="syncSelectedTextStyle()">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div class="space-y-1">
+                        <label class="text-gray-500">字号: <span id="fontSizeVal">30</span></label>
+                        <input type="range" id="fontSize" min="12" max="120" value="30" class="w-full" oninput="syncSelectedTextStyle()">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-gray-500">描边粗细: <span id="strokeWidthVal">3</span></label>
+                        <input type="range" id="strokeWidth" min="0" max="30" value="3" class="w-full" oninput="syncSelectedTextStyle()">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div class="space-y-1">
+                        <label class="text-gray-500">字间距: <span id="letterSpacingVal">0</span></label>
+                        <input type="range" id="letterSpacing" min="-2" max="20" step="0.5" value="0" class="w-full" oninput="syncSelectedTextStyle()">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-gray-500">行间距: <span id="lineHeightVal">1.2</span></label>
+                        <input type="range" id="lineHeight" min="0.8" max="3" step="0.05" value="1.2" class="w-full" oninput="syncSelectedTextStyle()">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div class="space-y-1">
+                        <label class="text-gray-500">背景颜色</label>
+                        <div class="flex items-center gap-2">
+                            <input type="color" id="bgColor" class="flex-1 h-9 rounded p-1 border" value="#000000" oninput="syncSelectedTextStyle()">
+                            <input type="checkbox" id="useBg" onchange="syncSelectedTextStyle()">
+                        </div>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-gray-500">描边颜色</label>
+                        <div class="flex items-center gap-2">
+                            <input type="color" id="strokeColor" class="flex-1 h-9 rounded p-1 border" value="#000000" oninput="syncSelectedTextStyle()">
+                            <input type="checkbox" id="hasStroke" onchange="syncSelectedTextStyle()">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div class="space-y-1">
+                        <label class="text-gray-500">操作提示</label>
+                        <p class="text-[10px] text-gray-400">点击文字可编辑，双击删除；拖动后自动记录步骤</p>
+                    </div>
+                    <div class="flex items-end gap-4 pb-1">
+                        <label class="flex items-center gap-1 font-bold"><input type="checkbox" id="isBold" onchange="syncSelectedTextStyle()"> 粗</label>
+                        <label class="flex items-center gap-1 italic"><input type="checkbox" id="isItalic" onchange="syncSelectedTextStyle()"> 斜</label>
+                    </div>
+                </div>
+                <p class="text-[10px] text-gray-400 text-center">修改样式会自动记录步骤，撤销可回退</p>
+            </div>
+
+            <!-- 模块2：独立水印 -->
+            <div id="panel-watermark" class="hidden space-y-3">
+                <input type="text" id="wmText" placeholder="水印文字..." value="版权所有" class="w-full border rounded-lg px-3 py-2 text-sm outline-none">
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div class="space-y-1">
+                        <label class="text-gray-500">水印颜色</label>
+                        <input type="color" id="wmColor" class="w-full h-8 border rounded" value="#888888">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-gray-500">不透明度</label>
+                        <input type="range" id="wmOpacity" min="10" max="100" value="30" class="w-full">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div class="space-y-1">
+                        <label class="text-gray-500">水印密度</label>
+                        <input type="range" id="wmDensity" min="15" max="60" value="30" class="w-full">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-gray-500">旋转角度</label>
+                        <input type="range" id="wmRotate" min="-90" max="90" value="-30" class="w-full">
+                    </div>
+                </div>
+                <button onclick="addFullScreenWatermark()" class="w-full bg-gray-800 text-white py-2 rounded-lg text-sm font-bold shadow-lg">生成全屏水印</button>
+                <button onclick="clearAllOverlays()" class="w-full border border-gray-300 py-2 rounded-lg text-xs text-gray-500">清除所有文字/水印</button>
+            </div>
+
+            <!-- 模块3：马赛克与模糊 -->
+            <div id="panel-mosaic" class="hidden space-y-4">
+                <div class="flex bg-gray-100 p-1 rounded-xl">
+                    <button onclick="setMosaicMode('pixel')" id="mode-pixel" class="flex-1 py-2 rounded-lg bg-white shadow-sm text-xs font-bold transition">经典马赛克</button>
+                    <button onclick="setMosaicMode('blur')" id="mode-blur" class="flex-1 py-2 rounded-lg text-xs text-gray-500 transition font-bold">强力模糊 (非高斯)</button>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="setTool('brush')" id="tool-brush" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-xs shadow-md">画笔涂鸦</button>
+                    <button onclick="setTool('rect')" id="tool-rect" class="flex-1 py-2 rounded-lg bg-gray-200 text-gray-600 text-xs">矩形框选</button>
+                </div>
+                <div class="space-y-2 text-xs">
+                    <label class="flex justify-between text-gray-500">模糊强度: <span id="intensityVal">10</span></label>
+                    <input type="range" id="intensity" min="2" max="100" value="10" class="w-full">
+                    
+                    <label class="flex justify-between text-gray-500">画笔粗细: <span id="brushSizeVal">30</span></label>
+                    <input type="range" id="brushSize" min="5" max="150" value="30" class="w-full">
+                </div>
+                <button onclick="clearCanvas()" class="w-full border border-red-200 text-red-400 py-2 rounded-lg text-xs italic">重置背景图片</button>
+            </div>
+
+            <!-- 模块4：导出 -->
+            <div id="panel-export" class="hidden space-y-4 py-4">
+                <button onclick="saveFinalImage()" class="w-full bg-green-500 hover:bg-green-600 text-white py-4 rounded-2xl font-bold shadow-xl active:scale-95 transition">
+                    完成并生成高清图
+                </button>
+                <div id="download-container" class="hidden text-center space-y-3">
+                    <a id="downloadLink" class="inline-block bg-white text-blue-600 px-6 py-2 rounded-full border-2 border-blue-600 font-bold text-sm">点击下载文件</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const container = document.getElementById('container');
+        const selBox = document.getElementById('selection-box');
+        
+        let originalImg = null;
+        let mosaicMode = 'pixel';
+        let currentTool = 'brush';
+        let isDrawing = false;
+        let startX, startY;
+        let history = [];
+        let activeDiv = null;
+        let isRestoring = false;
+        let historyTimer = null;
+
+        document.getElementById('imageInput').addEventListener('change', handleUpload);
+
+        function handleUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const img = new Image();
+                img.onload = () => {
+                    originalImg = img;
+                    initCanvas();
+                    clearAllOverlays();
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function initCanvas() {
+            if (!originalImg) return;
+            canvas.width = originalImg.width;
+            canvas.height = originalImg.height;
+            ctx.drawImage(originalImg, 0, 0);
+            saveHistory();
+        }
+
+        function switchTab(tab) {
+            ['text', 'watermark', 'mosaic', 'export'].forEach(t => {
+                document.getElementById(`panel-${t}`).classList.add('hidden');
+                document.getElementById(`tab-${t}`).className = 'flex-1 py-3 text-gray-500';
+            });
+            document.getElementById(`panel-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).className = 'flex-1 py-3 tab-active';
+            if (tab === 'mosaic') initMosaicEvents();
+            else removeMosaicEvents();
+        }
+
+        // 文字功能
+        function addText() {
+            const config = getPanelConfig();
+            config.text = document.getElementById('textInput').value || '双击编辑内容';
+            createOverlay(config);
+        }
+
+        function getPanelConfig() {
+            return {
+                color: document.getElementById('textColor').value,
+                size: document.getElementById('fontSize').value,
+                font: document.getElementById('fontFamily').value,
+                bold: document.getElementById('isBold').checked,
+                italic: document.getElementById('isItalic').checked,
+                bg: document.getElementById('useBg').checked ? document.getElementById('bgColor').value : 'transparent',
+                hasStroke: document.getElementById('hasStroke').checked,
+                strokeColor: document.getElementById('strokeColor').value,
+                strokeWidth: document.getElementById('strokeWidth').value,
+                letterSpacing: document.getElementById('letterSpacing').value,
+                lineHeight: document.getElementById('lineHeight').value
+            };
+        }
+
+        function createOverlay(config) {
+            const div = document.createElement('div');
+            div.className = 'text-overlay active';
+            div.innerText = config.text || '文本';
+            div.style.left = '20px';
+            div.style.top = '20px';
+            applyStyleToDiv(div, config);
+            div.onclick = () => selectDiv(div);
+
+            let dragging = false, offset = {x:0, y:0};
+            const start = (e) => {
+                dragging = true;
+                const p = e.touches ? e.touches[0] : e;
+                offset.x = p.clientX - div.offsetLeft;
+                offset.y = p.clientY - div.offsetTop;
+                selectDiv(div);
+                e.stopPropagation();
+            };
+            const move = (e) => {
+                if (!dragging) return;
+                const p = e.touches ? e.touches[0] : e;
+                div.style.left = (p.clientX - offset.x) + 'px';
+                div.style.top = (p.clientY - offset.y) + 'px';
+            };
+            const stop = () => {
+                if (dragging) saveHistory();
+                dragging = false;
+            };
+
+            div.addEventListener('mousedown', start);
+            div.addEventListener('touchstart', start);
+            window.addEventListener('mousemove', move);
+            window.addEventListener('touchmove', move, {passive: false});
+            window.addEventListener('mouseup', stop);
+            window.addEventListener('touchend', stop);
+            div.addEventListener('dblclick', () => {
+                div.remove();
+                saveHistory();
+            });
+
+            container.appendChild(div);
+            selectDiv(div);
+            saveHistory();
+        }
+
+        function selectDiv(div) {
+            document.querySelectorAll('.text-overlay').forEach(el => el.classList.remove('active'));
+            div.classList.add('active');
+            activeDiv = div;
+            document.getElementById('textInput').value = div.innerText;
+            document.getElementById('fontSize').value = parseFloat(div.style.fontSize) || 30;
+            document.getElementById('fontSizeVal').innerText = document.getElementById('fontSize').value;
+            document.getElementById('textColor').value = rgbToHex(div.style.color || '#ffffff');
+            document.getElementById('fontFamily').value = div.style.fontFamily || 'sans-serif';
+            document.getElementById('isBold').checked = (div.style.fontWeight === 'bold');
+            document.getElementById('isItalic').checked = (div.style.fontStyle === 'italic');
+            document.getElementById('useBg').checked = (div.style.backgroundColor && div.style.backgroundColor !== 'transparent' && div.style.backgroundColor !== 'rgba(0, 0, 0, 0)');
+            if (document.getElementById('useBg').checked) {
+                document.getElementById('bgColor').value = rgbToHex(div.style.backgroundColor);
+            }
+            document.getElementById('hasStroke').checked = (div.dataset.hasStroke === 'true');
+            document.getElementById('strokeColor').value = div.dataset.strokeColor || '#000000';
+            document.getElementById('strokeWidth').value = div.dataset.strokeWidth || 0;
+            document.getElementById('strokeWidthVal').innerText = document.getElementById('strokeWidth').value;
+            document.getElementById('letterSpacing').value = div.dataset.letterSpacing || 0;
+            document.getElementById('letterSpacingVal').innerText = document.getElementById('letterSpacing').value;
+            document.getElementById('lineHeight').value = div.dataset.lineHeight || 1.2;
+            document.getElementById('lineHeightVal').innerText = document.getElementById('lineHeight').value;
+        }
+
+        function syncSelectedTextStyle() {
+            if (activeDiv) {
+                const config = getPanelConfig();
+                applyStyleToDiv(activeDiv, config);
+                document.getElementById('fontSizeVal').innerText = config.size;
+                document.getElementById('strokeWidthVal').innerText = config.strokeWidth;
+                document.getElementById('letterSpacingVal').innerText = config.letterSpacing;
+                document.getElementById('lineHeightVal').innerText = config.lineHeight;
+                saveHistoryDebounced();
+            }
+        }
+
+        function applyStyleToDiv(div, config) {
+            div.style.color = config.color;
+            div.style.fontSize = config.size + 'px';
+            div.style.fontFamily = config.font;
+            div.style.fontWeight = config.bold ? 'bold' : 'normal';
+            div.style.fontStyle = config.italic ? 'italic' : 'normal';
+            div.style.backgroundColor = config.bg;
+            div.style.padding = '2px';
+            div.style.letterSpacing = `${config.letterSpacing}px`;
+            div.style.lineHeight = config.lineHeight;
+            if (config.hasStroke && Number(config.strokeWidth) > 0) {
+                div.style.webkitTextStroke = `${config.strokeWidth}px ${config.strokeColor}`;
+            } else {
+                div.style.webkitTextStroke = '0px transparent';
+            }
+            div.style.textShadow = 'none';
+            div.dataset.hasStroke = config.hasStroke;
+            div.dataset.strokeColor = config.strokeColor;
+            div.dataset.strokeWidth = config.strokeWidth;
+            div.dataset.letterSpacing = config.letterSpacing;
+            div.dataset.lineHeight = config.lineHeight;
+        }
+
+        function rgbToHex(color) {
+            if (!color) return '#000000';
+            if (color.startsWith('#')) return color;
+            const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            if (!m) return '#000000';
+            const r = parseInt(m[1], 10).toString(16).padStart(2, '0');
+            const g = parseInt(m[2], 10).toString(16).padStart(2, '0');
+            const b = parseInt(m[3], 10).toString(16).padStart(2, '0');
+            return `#${r}${g}${b}`;
+        }
+
+        // 水印功能
+        function addFullScreenWatermark() {
+            const txt = document.getElementById('wmText').value || 'Watermark';
+            const color = document.getElementById('wmColor').value;
+            const opacity = document.getElementById('wmOpacity').value / 100;
+            const density = parseInt(document.getElementById('wmDensity').value);
+            const rotate = document.getElementById('wmRotate').value;
+
+            for(let y = 0; y < 100; y += density) {
+                for(let x = 0; x < 100; x += (density * 1.5)) {
+                    const div = document.createElement('div');
+                    div.className = 'text-overlay';
+                    div.innerText = txt;
+                    div.style.left = x + '%';
+                    div.style.top = y + '%';
+                    div.style.color = color;
+                    div.style.opacity = opacity;
+                    div.style.transform = `rotate(${rotate}deg)`;
+                    div.style.fontSize = '14px';
+                    div.style.pointerEvents = 'none';
+                    container.appendChild(div);
+                }
+            }
+            saveHistory();
+        }
+
+        function clearAllOverlays() {
+            document.querySelectorAll('.text-overlay').forEach(el => el.remove());
+            activeDiv = null;
+            saveHistory();
+        }
+
+        // --- 核心模糊算法修复 ---
+        function setMosaicMode(m) {
+            mosaicMode = m;
+            document.getElementById('mode-pixel').className = m === 'pixel' ? 'flex-1 py-2 rounded-lg bg-white shadow-sm text-xs font-bold transition' : 'flex-1 py-2 rounded-lg text-xs text-gray-500 transition font-bold';
+            document.getElementById('mode-blur').className = m === 'blur' ? 'flex-1 py-2 rounded-lg bg-white shadow-sm text-xs font-bold transition' : 'flex-1 py-2 rounded-lg text-xs text-gray-500 transition font-bold';
+        }
+
+        function setTool(t) {
+            currentTool = t;
+            document.getElementById('tool-brush').className = t === 'brush' ? 'flex-1 py-2 rounded-lg bg-indigo-600 text-white text-xs shadow-md' : 'flex-1 py-2 rounded-lg bg-gray-200 text-gray-600 text-xs';
+            document.getElementById('tool-rect').className = t === 'rect' ? 'flex-1 py-2 rounded-lg bg-indigo-600 text-white text-xs shadow-md' : 'flex-1 py-2 rounded-lg bg-gray-200 text-gray-600 text-xs';
+        }
+
+        function initMosaicEvents() {
+            canvas.onmousedown = canvas.ontouchstart = (e) => {
+                isDrawing = true;
+                const pos = getRealMousePos(e);
+                startX = pos.x; startY = pos.y;
+                if (currentTool === 'rect') {
+                    selBox.style.display = 'block';
+                    updateSelectionBox(e);
+                } else {
+                    draw(e);
+                }
+            };
+            canvas.onmousemove = canvas.ontouchmove = (e) => {
+                if (!isDrawing) return;
+                e.preventDefault();
+                if (currentTool === 'rect') {
+                    updateSelectionBox(e);
+                } else {
+                    draw(e);
+                }
+            };
+            canvas.onmouseup = canvas.onmouseout = canvas.ontouchend = (e) => {
+                if (!isDrawing) return;
+                if (currentTool === 'rect') {
+                    const pos = getRealMousePos(e);
+                    const rx = Math.min(startX, pos.x), ry = Math.min(startY, pos.y);
+                    const rw = Math.abs(pos.x - startX), rh = Math.abs(pos.y - startY);
+                    if (rw > 2) applyProcessing(rx, ry, rw, rh);
+                    selBox.style.display = 'none';
+                    saveHistory();
+                } else {
+                    saveHistory();
+                }
+                isDrawing = false;
+            };
+        }
+
+        function removeMosaicEvents() {
+            canvas.onmousedown = canvas.ontouchstart = canvas.onmousemove = canvas.ontouchmove = canvas.onmouseup = canvas.ontouchend = null;
+        }
+
+        function getRealMousePos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? (e.touches[0] ? e.touches[0].clientX : e.changedTouches[0].clientX) : e.clientX;
+            const clientY = e.touches ? (e.touches[0] ? e.touches[0].clientY : e.changedTouches[0].clientY) : e.clientY;
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY,
+                rawX: clientX - rect.left,
+                rawY: clientY - rect.top
+            };
+        }
+
+        function updateSelectionBox(e) {
+            const pos = getRealMousePos(e);
+            const rect = canvas.getBoundingClientRect();
+            const startCanvasX = startX / (canvas.width / rect.width);
+            const startCanvasY = startY / (canvas.height / rect.height);
+            selBox.style.left = Math.min(startCanvasX, pos.rawX) + 'px';
+            selBox.style.top = Math.min(startCanvasY, pos.rawY) + 'px';
+            selBox.style.width = Math.abs(pos.rawX - startCanvasX) + 'px';
+            selBox.style.height = Math.abs(pos.rawY - startCanvasY) + 'px';
+        }
+
+        function draw(e) {
+            const pos = getRealMousePos(e);
+            const size = parseInt(document.getElementById('brushSize').value);
+            document.getElementById('brushSizeVal').innerText = size;
+            applyProcessing(pos.x - size/2, pos.y - size/2, size, size, true);
+        }
+
+        // 强力模糊核心算法升级：引入基础阈值并优化多重混合逻辑
+        function applyProcessing(x, y, w, h, isCircle = false) {
+            x = Math.max(0, Math.floor(x));
+            y = Math.max(0, Math.floor(y));
+            w = Math.min(canvas.width - x, Math.floor(w));
+            h = Math.min(canvas.height - y, Math.floor(h));
+            if (w <= 0 || h <= 0) return;
+
+            const val = parseInt(document.getElementById('intensity').value);
+            document.getElementById('intensityVal').innerText = val;
+            
+            const imgData = ctx.getImageData(x, y, w, h);
+            const pixels = imgData.data;
+
+            if (mosaicMode === 'pixel') {
+                for (let i = 0; i < h; i += val) {
+                    for (let j = 0; j < w; j += val) {
+                        const rIdx = (i * w + j) * 4;
+                        const r = pixels[rIdx], g = pixels[rIdx+1], b = pixels[rIdx+2];
+                        for (let ny = 0; ny < val && i+ny < h; ny++) {
+                            for (let nx = 0; nx < val && j+nx < w; nx++) {
+                                const tIdx = ((i+ny) * w + (j+nx)) * 4;
+                                pixels[tIdx] = r; pixels[tIdx+1] = g; pixels[tIdx+2] = b;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // 强力模糊：基于大范围邻域均值混合 (即使低强度也有明显遮盖感)
+                // 引入 baseRadius 确保低强度不“淡”
+                const baseRadius = 4; 
+                const radius = Math.floor(baseRadius + (val / 10)); 
+                const jump = Math.max(1, Math.floor(radius / 2.5)); // 跳跃采样提高速度
+
+                // 为了防止边缘闪烁，先克隆一份数据用于采样
+                const originalPixels = new Uint8ClampedArray(pixels);
+
+                for (let i = 0; i < h; i++) {
+                    for (let j = 0; j < w; j++) {
+                        if (isCircle) {
+                            const dx = j - w/2, dy = i - h/2;
+                            if (dx*dx + dy*dy > (w/2)*(w/2)) continue;
+                        }
+                        
+                        const idx = (i * w + j) * 4;
+                        let r=0, g=0, b=0, count=0;
+
+                        // 在 radius 范围内进行均值采样
+                        for(let ky = -radius; ky <= radius; ky += jump) {
+                            for(let kx = -radius; kx <= radius; kx += jump) {
+                                const py = Math.min(h-1, Math.max(0, i + ky));
+                                const px = Math.min(w-1, Math.max(0, j + kx));
+                                const pIdx = (py * w + px) * 4;
+                                r += originalPixels[pIdx];
+                                g += originalPixels[pIdx+1];
+                                b += originalPixels[pIdx+2];
+                                count++;
+                            }
+                        }
+                        pixels[idx] = r / count;
+                        pixels[idx+1] = g / count;
+                        pixels[idx+2] = b / count;
+                    }
+                }
+            }
+            ctx.putImageData(imgData, x, y);
+        }
+
+        function saveHistoryDebounced() {
+            if (isRestoring) return;
+            clearTimeout(historyTimer);
+            historyTimer = setTimeout(saveHistory, 350);
+        }
+
+        function captureOverlayState(div) {
+            return {
+                text: div.innerText,
+                left: div.style.left,
+                top: div.style.top,
+                color: div.style.color,
+                fontSize: div.style.fontSize,
+                fontFamily: div.style.fontFamily,
+                fontWeight: div.style.fontWeight,
+                fontStyle: div.style.fontStyle,
+                backgroundColor: div.style.backgroundColor,
+                opacity: div.style.opacity,
+                transform: div.style.transform,
+                letterSpacing: div.style.letterSpacing,
+                lineHeight: div.style.lineHeight,
+                webkitTextStroke: div.style.webkitTextStroke,
+                hasStroke: div.dataset.hasStroke,
+                strokeColor: div.dataset.strokeColor,
+                strokeWidth: div.dataset.strokeWidth,
+                letterSpacingData: div.dataset.letterSpacing,
+                lineHeightData: div.dataset.lineHeight
+            };
+        }
+
+        function restoreOverlays(list) {
+            clearAllOverlays();
+            list.forEach(state => {
+                const div = document.createElement('div');
+                div.className = 'text-overlay';
+                div.innerText = state.text || '';
+                div.style.left = state.left;
+                div.style.top = state.top;
+                div.style.color = state.color;
+                div.style.fontSize = state.fontSize;
+                div.style.fontFamily = state.fontFamily;
+                div.style.fontWeight = state.fontWeight;
+                div.style.fontStyle = state.fontStyle;
+                div.style.backgroundColor = state.backgroundColor;
+                div.style.opacity = state.opacity;
+                div.style.transform = state.transform;
+                div.style.letterSpacing = state.letterSpacing || '0px';
+                div.style.lineHeight = state.lineHeight || '1.2';
+                div.style.webkitTextStroke = state.webkitTextStroke || '0px transparent';
+                div.style.textShadow = 'none';
+                div.dataset.hasStroke = state.hasStroke;
+                div.dataset.strokeColor = state.strokeColor;
+                div.dataset.strokeWidth = state.strokeWidth;
+                div.dataset.letterSpacing = state.letterSpacingData || '0';
+                div.dataset.lineHeight = state.lineHeightData || '1.2';
+
+                div.onclick = () => selectDiv(div);
+
+                let dragging = false, offset = {x:0, y:0};
+                const start = (e) => {
+                    dragging = true;
+                    const p = e.touches ? e.touches[0] : e;
+                    offset.x = p.clientX - div.offsetLeft;
+                    offset.y = p.clientY - div.offsetTop;
+                    selectDiv(div);
+                    e.stopPropagation();
+                };
+                const move = (e) => {
+                    if (!dragging) return;
+                    const p = e.touches ? e.touches[0] : e;
+                    div.style.left = (p.clientX - offset.x) + 'px';
+                    div.style.top = (p.clientY - offset.y) + 'px';
+                };
+                const stop = () => {
+                    if (dragging) saveHistory();
+                    dragging = false;
+                };
+
+                div.addEventListener('mousedown', start);
+                div.addEventListener('touchstart', start);
+                window.addEventListener('mousemove', move);
+                window.addEventListener('touchmove', move, {passive: false});
+                window.addEventListener('mouseup', stop);
+                window.addEventListener('touchend', stop);
+                div.addEventListener('dblclick', () => {
+                    div.remove();
+                    saveHistory();
+                });
+
+                container.appendChild(div);
+            });
+        }
+
+        function saveHistory() {
+            if (isRestoring) return;
+            const state = {
+                canvas: canvas.toDataURL(),
+                overlays: Array.from(document.querySelectorAll('.text-overlay')).map(captureOverlayState)
+            };
+            if (history.length > 30) history.shift();
+            history.push(state);
+        }
+
+        function undo() {
+            if (history.length > 1) {
+                history.pop();
+                const last = history[history.length - 1];
+                const img = new Image();
+                isRestoring = true;
+                img.onload = () => {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+                    restoreOverlays(last.overlays || []);
+                    isRestoring = false;
+                };
+                img.src = last.canvas;
+            }
+        }
+
+        function clearCanvas() { initCanvas(); }
+
+        function drawTextWithSpacing(targetCtx, text, x, y, letterSpacing, stroke) {
+            let cursorX = x;
+            for (let i = 0; i < text.length; i++) {
+                const ch = text[i];
+                if (stroke) targetCtx.strokeText(ch, cursorX, y);
+                else targetCtx.fillText(ch, cursorX, y);
+                cursorX += targetCtx.measureText(ch).width + letterSpacing;
+            }
+        }
+
+        function getPaddingPx(div) {
+            const v = parseFloat(div.style.padding || '');
+            if (!Number.isNaN(v)) return v;
+            const computed = window.getComputedStyle(div).paddingLeft;
+            const n = parseFloat(computed);
+            return Number.isNaN(n) ? 0 : n;
+        }
+
+        function saveFinalImage() {
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = canvas.width;
+            finalCanvas.height = canvas.height;
+            const fctx = finalCanvas.getContext('2d');
+            fctx.drawImage(canvas, 0, 0);
+
+            const rect = canvas.getBoundingClientRect();
+            const scale = canvas.width / rect.width;
+
+            document.querySelectorAll('.text-overlay').forEach(div => {
+                fctx.save();
+                let x, y;
+                if(div.style.left.includes('%')) {
+                    x = (parseFloat(div.style.left)/100) * canvas.width;
+                    y = (parseFloat(div.style.top)/100) * canvas.height;
+                } else {
+                    x = parseFloat(div.style.left) * scale;
+                    y = parseFloat(div.style.top) * scale;
+                }
+
+                const size = parseFloat(div.style.fontSize) * scale;
+                const letterSpacing = parseFloat(div.dataset.letterSpacing || 0) * scale;
+                const lineHeight = parseFloat(div.dataset.lineHeight || 1.2);
+                const strokeWidth = parseFloat(div.dataset.strokeWidth || 0) * scale;
+                const pad = getPaddingPx(div) * scale;
+                const rotateMatch = div.style.transform.match(/rotate\((.*)deg\)/);
+                if(rotateMatch) {
+                    fctx.translate(x, y);
+                    fctx.rotate(parseFloat(rotateMatch[1]) * Math.PI / 180);
+                    fctx.translate(-x, -y);
+                }
+
+                fctx.globalAlpha = div.style.opacity || 1;
+                if (div.style.backgroundColor !== 'transparent') {
+                    fctx.fillStyle = div.style.backgroundColor;
+                    fctx.fillRect(x, y, div.offsetWidth * scale, div.offsetHeight * scale);
+                }
+
+                fctx.font = `${div.style.fontStyle} ${div.style.fontWeight} ${size}px ${div.style.fontFamily}`;
+                fctx.textBaseline = 'top';
+                fctx.lineJoin = 'round';
+                fctx.lineCap = 'round';
+
+                const lines = div.innerText.split('\n');
+                const lineH = size * lineHeight;
+
+                if (div.dataset.hasStroke === 'true' && strokeWidth > 0) {
+                    fctx.strokeStyle = div.dataset.strokeColor;
+                    fctx.lineWidth = strokeWidth;
+                    lines.forEach((l, i) => {
+                        drawTextWithSpacing(fctx, l, x + pad, y + pad + (i * lineH), letterSpacing, true);
+                    });
+                }
+
+                fctx.fillStyle = div.style.color;
+                lines.forEach((l, i) => {
+                    drawTextWithSpacing(fctx, l, x + pad, y + pad + (i * lineH), letterSpacing, false);
+                });
+                fctx.restore();
+            });
+
+            const link = document.getElementById('downloadLink');
+            link.href = finalCanvas.toDataURL('image/png');
+            link.download = `photo_pro_${Date.now()}.png`;
+            document.getElementById('download-container').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
